@@ -66,25 +66,24 @@ default{
             sFilter1 = 0;
             pos = llGetPos();
             rot = llGetRot();
-            chatchannel = (param >> 2);
-            
-            explicitFlag = param & 0xF;
+            chatchannel = (integer)((0x00FFFFFF & (param >> 8)) + 0x7F000000);
+            explicitFlag = param & 0x000000FF;
             quietMode = 0;
-                 if(explicitFlag == 3) {
-                     quietMode = 1;
-                     explicitFlag = 1;
+            if(explicitFlag == 3) {
+                 quietMode = 1;
+                 explicitFlag = 1;
             }
             else if(explicitFlag == 2) {
-                     quietMode = 1;
-                     explicitFlag = 0;
+                 quietMode = 1;
+                 explicitFlag = 0;
             }
             else if(explicitFlag == 1) {
-                     quietMode = 0;
-                     explicitFlag = 1;
+                 quietMode = 0;
+                 explicitFlag = 1;
             }
             else if(explicitFlag == 0) {
-                     quietMode = 0;
-                     explicitFlag = 0;
+                 quietMode = 0;
+                 explicitFlag = 0;
             }
 
             dietimeout = (integer)timeToLive();
