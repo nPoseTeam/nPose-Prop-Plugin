@@ -117,7 +117,7 @@ default{
             else if (cmd == "pong"){
                 if (sFilter1 == 0){
                     parent = id;
-                    vDelta = (vector)llList2String(msg, 2);
+                    vDelta = (vector)llList2String(msg, 1);
                     sFilter1 = 1;
                 }
                 if (parent == NULL_KEY){
