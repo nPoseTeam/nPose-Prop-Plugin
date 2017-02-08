@@ -26,7 +26,9 @@ integer quietMode;
 integer sFilter1;
 vector vDelta;
 
-
+debug(list message){
+    llOwnerSay((((llGetScriptName() + "\n##########\n#>") + llDumpList2String(message,"\n#>")) + "\n##########"));
+}
 
 string timeToLive(){
     string desc = (string)llGetObjectDetails(llGetKey(), [OBJECT_DESC]);
@@ -45,6 +47,77 @@ string timeToLive(){
     }else{
         return lifetime;
     }
+}
+
+execute(list msg, key id) {
+    string cmd=llList2String(msg, 0);
+    if(cmd == "posdump") {
+        string out = (string)pos + "|" + (string)rot;
+        if (explicitFlag == 1){ out = out + "|explicit";}
+        if (parent){
+            llRegionSayTo(parent, chatchannel, out);
+        }else{
+            llRegionSay(chatchannel, out);
+        }
+    }
+    else if(cmd == "pong") {
+        if(sFilter1 == 0) {
+            parent = id;
+            vDelta = (vector)llList2String(msg, 1);
+            sFilter1 = 1;
+        }
+        if(parent == NULL_KEY) {
+            parent = id;
+        }
+    }
+    else if(cmd == "LINKMSG") {
+        llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
+    }
+/* added for Yvana, temporary disabled because it have to be rewritten (the message is not known inside this function
+    else if(cmd == "LINKMSGQUE") {
+        if(message != sFilter) {
+            //filter out duplicates
+            llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
+            sFilter = message;
+        }
+    }
+*/
+    else if(cmd == "MOVEPROP" ) {
+        if(llList2String(msg,1) == llGetObjectName() && (llVecMag(vDelta) < 0.1)) {
+            if(iMoved == 0) {
+                // move it
+                vector vPosition =  (vector)llList2String(msg,2);
+                llSetRegionPos( vPosition );
+                pos = llGetPos();
+                rot = llGetRot();
+            }
+            iMoved = 1;
+        }
+    }
+    else if(cmd=="PROPDIE") {
+        string target=llList2String(msg, 1);
+        list targetNames=llCSV2List(llList2String(msg, 2));
+        if(
+            (target=="all") ||
+            (target=="normal" && explicitFlag==0) ||
+            (target=="explicit" && explicitFlag==1) ||
+            (target=="list" && ~llListFindList(targetNames, [llGetObjectName()]))
+        ) {
+            llDie();
+        }
+    }
+    // begin old stuff
+    else if(cmd=="die") {
+        if(explicitFlag == 0) {
+            llDie();
+        }
+    }
+    else if(cmd==llGetObjectName()+"=die") {
+        if(explicitFlag == 1) {
+            llDie();
+        }
+    }
+    //end old stuff
 }
 
 default{
@@ -96,52 +169,18 @@ default{
     }
 
     listen(integer channel, string name, key id, string message){
-        list msg = llParseString2List(message, ["|"], []);
-        string cmd = llList2String(msg,0);
-        list params1 = llParseString2List(cmd, ["="],[]);
-        if ((llList2String(params1,0) == llGetObjectName()) && (llList2String(params1,1) == "die") && (explicitFlag == 1)){
-            llDie();
-        }else if (cmd == "die" && explicitFlag == 0){
-            llDie();
-        }
-        if (llGetOwnerKey(id) == llGetOwner()){
-            if (cmd == "posdump"){
-                string out = (string)pos + "|" + (string)rot;
-                if (explicitFlag == 1){ out = out + "|explicit";}
-                if (parent){
-                    llRegionSayTo(parent, chatchannel, out);
-                }else{
-                    llRegionSay(chatchannel, out);
+        if(llGetOwnerKey(id) == llGetOwner()) {
+            if(llJsonValueType(message, [])==JSON_ARRAY) {
+                list commandLines=llJson2List(message);
+                while(llGetListLength(commandLines)) {
+                    list commandParts=llJson2List(llList2String(commandLines, 0));
+                    execute(commandParts, id);
+                    commandLines=llDeleteSubList(commandLines, 0, 0);
                 }
             }
-            else if (cmd == "pong"){
-                if (sFilter1 == 0){
-                    parent = id;
-                    vDelta = (vector)llList2String(msg, 1);
-                    sFilter1 = 1;
-                }
-                if (parent == NULL_KEY){
-                    parent = id;
-                }
-            }else if (cmd == "LINKMSG"){
-                llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
-            }else if (cmd == "LINKMSGQUE"){
-                if (message != sFilter){
-                    //filter out duplicates
-                    llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
-                    sFilter = message;
-                }
-            }else if (cmd == "MOVEPROP" ){
-                if (llList2String(msg,1) == llGetObjectName() && (llVecMag(vDelta) < 0.1)){
-                    if (iMoved == 0){
-                        // move it
-                        vector vPosition =  (vector)llList2String(msg,2);
-                        llSetRegionPos( vPosition );
-                        pos = llGetPos();
-                        rot = llGetRot();
-                    }
-                    iMoved = 1;
-                }
+            else {
+                list msg = llParseString2List(message, ["|"], []);
+                execute(msg, id);
             }
         }
     }
