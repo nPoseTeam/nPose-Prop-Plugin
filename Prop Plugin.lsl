@@ -7,28 +7,27 @@ The nPose scripts are free to be copied, modified, and redistributed, subject to
 
 "Full perms" means having the modify, copy, and transfer permissions enabled in Second Life and/or other virtual world platforms derived from Second Life (such as OpenSim).  If the platform should allow more fine-grained permissions, then "full perms" will mean the most permissive possible set of permissions allowed by the platform.
 */
-//to set a prop to explicit, add |explicit to the end of PROP line in notecard, else prop will be a normal prop
-//to have prop explicitly die, send propname=die in notecard parm spot #2
-// PROP|propname|propname=die
 
-float timeout = 10.0;
-rotation rot;
-vector pos;
-key parent = NULL_KEY;
-integer chatchannel;
-integer dietimeout;
-integer timeoutticker;
-string lifetime;
-integer iMoved = 0;
-string sFilter = ""; //this filters out duplicate messages.  
-integer explicitFlag;
-integer quietMode;
-integer sFilter1;
-vector vDelta;
+float TICKER_TIME = 10.0;
+float DEFAULT_TIMEOUT = 10.0;
+string PROP_REZ_COMMAND="PROP";
 
+rotation MyRot;
+vector MyPos;
+key Parent = NULL_KEY;
+integer ChatChannel;
+float Lifetime;
+//string Filter = ""; //this filters out duplicate messages.  
+integer MyGroup;
+integer QuietMode;
 
+debug(list message){
+    llOwnerSay((((llGetScriptName() + "\n##########\n#>") + llDumpList2String(message,"\n#>")) + "\n##########"));
+}
 
-string timeToLive(){
+float timeToLive(){
+    //Leona: AFAIK: This isn't documented. Does someone use this?
+    float lifetime;
     string desc = (string)llGetObjectDetails(llGetKey(), [OBJECT_DESC]);
     //prim desc will be elementtype~notexture(maybe)
     list params = llParseString2List(desc, ["~"], []);
@@ -37,14 +36,123 @@ string timeToLive(){
     for (n=0; n<stop; n++){
         list param = llParseString2List(llList2String(params,n), ["="], []);
         if (llList2String(param,0) == "lifetime"){
-            lifetime = llList2String(param, 1);
+            lifetime = (float)llList2String(param, 1);
         }
     }
-    if (lifetime =="" || lifetime == "0"){
-        return "0";
-    }else{
-        return lifetime;
+    return lifetime;
+}
+
+report() {
+    if(Parent!=NULL_KEY) {
+        //if we have a parent we use relative pos and rot
+        list parentDetails=llGetObjectDetails(Parent, [OBJECT_POS, OBJECT_ROT]);
+        vector parentPos=llList2Vector(parentDetails, 0);
+        rotation parentRot=llList2Rot(parentDetails, 1);
+        
+        vector reportingPos = (llGetPos() - parentPos) / parentRot;
+        vector reportingRot = llRot2Euler(llGetRot() / parentRot) * RAD_TO_DEG;
+        
+        list parts = [PROP_REZ_COMMAND, llGetObjectName(), reportingPos, reportingRot];
+        if(QuietMode) {
+            parts+=[(string)MyGroup, "quiet"];
+        }
+        else if(MyGroup) {
+            parts+=[(string)MyGroup];
+        }
+        llRegionSayTo(llGetOwner(), 0, llDumpList2String(parts, "|"));
     }
+    else {
+        //should we do anything if we don't have a parent?
+    }
+}
+
+execute(list msg, key id) {
+    string cmd=llList2String(msg, 0);
+    if(cmd == "posdump") {
+        report();
+    }
+    else if(cmd == "pong") {
+        if(Parent == NULL_KEY) {
+            Parent = id;
+        }
+    }
+    else if(cmd == "LINKMSG") {
+        llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
+    }
+/* added for Yvana, temporary disabled because it have to be rewritten (the message is not known inside this function
+    else if(cmd == "LINKMSGQUE") {
+        if(message != Filter) {
+            //filter out duplicates
+            llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
+            Filter = message;
+        }
+    }
+*/
+    else if(cmd == "MOVEPROP" ) {
+        //moveprop only works for a short period from the time the prop rezzes until it gets its parent
+        if(Parent==NULL_KEY) {
+            if(llList2String(msg,1) == llGetObjectName()) {
+                // move it
+                llSetRegionPos((vector)llList2String(msg,2));
+                MyPos = llGetPos();
+                MyRot = llGetRot();
+                Parent = id;
+            }
+        }
+    }
+    else if(cmd=="PROPDIE") {
+        // PROPDIE[|propNameList[|propGroupList]]
+        string myName=llGetObjectName();
+        string targetNamesString=llList2String(msg, 1);
+        string targetGroupsString=llList2String(msg, 2);
+        
+        integer nameMatch = targetNamesString=="" || targetNamesString=="*";
+        integer groupMatch = targetGroupsString=="" || targetGroupsString=="*";
+
+        //group check
+        if(!groupMatch) {
+            list targetGroups=llCSV2List(targetGroupsString);
+            if(~llListFindList(targetGroups, [(string)MyGroup])) {
+                groupMatch=TRUE;
+            }
+        }
+
+        //Name check
+        if(groupMatch && !nameMatch) {
+            list targetNames=llCSV2List(targetNamesString);
+            while(llGetListLength(targetNames) && !nameMatch) {
+                string nameToCheck=llList2String(targetNames, 0);
+                if(llGetSubString(nameToCheck, -1, -1)=="*") {
+                    nameToCheck=llDeleteSubString(nameToCheck, -1, -1);
+                    if(!llSubStringIndex(myName, nameToCheck)) {
+                        nameMatch=TRUE;
+                    }
+                }
+                else {
+                    if(myName==nameToCheck) {
+                        nameMatch=TRUE;
+                    }
+                }
+                targetNames=llDeleteSubList(targetNames, 0, 0);
+            }
+        }
+        
+        if(nameMatch && groupMatch) {
+            llDie();
+        }
+    }
+    // begin old stuff
+    else if(cmd=="die") {
+        if(!MyGroup) {
+            llDie();
+        }
+    }
+    else if(cmd==llGetObjectName()+"=die") {
+        if(MyGroup==1) {
+            llDie();
+        }
+    }
+    //end old stuff
 }
 
 default{
@@ -54,126 +162,82 @@ default{
     //we need to provide the other info that the core is looking for to process messages.
     link_message(integer sender, integer num, string str, key id){
         if (llGetSubString(str,0,8) == "PROPRELAY"){
-            llRegionSayTo(parent, chatchannel, str);
+            llRegionSayTo(Parent, ChatChannel, str);
         }
         
     }
     
     on_rez(integer param){
-        parent = NULL_KEY;
-        iMoved = 0;
+        //param contains the ChatChannel (the upper 3 bytes) and 1 byte (the lower) of additional data
+        //DataBits:
+        // 0: unused
+        // 1: QuiteMode
+        // 2,3,4,5,6,7 groupNumber
+        Parent = NULL_KEY;
         if (param){
-            sFilter1 = 0;
-            pos = llGetPos();
-            rot = llGetRot();
-            chatchannel = (integer)((0x00FFFFFF & (param >> 8)) + 0x7F000000);
-            explicitFlag = param & 0x000000FF;
-            quietMode = 0;
-            if(explicitFlag == 3) {
-                 quietMode = 1;
-                 explicitFlag = 1;
-            }
-            else if(explicitFlag == 2) {
-                 quietMode = 1;
-                 explicitFlag = 0;
-            }
-            else if(explicitFlag == 1) {
-                 quietMode = 0;
-                 explicitFlag = 1;
-            }
-            else if(explicitFlag == 0) {
-                 quietMode = 0;
-                 explicitFlag = 0;
-            }
-
-            dietimeout = (integer)timeToLive();
-            llListen(chatchannel, "", "", "");
-            llSetTimerEvent(timeout);
-            llRegionSay(chatchannel, "ping");
+            MyPos = llGetPos();
+            MyRot = llGetRot();
+            
+            ChatChannel = ((param >> 8) & 0x00FFFFFF) + 0x7F000000;
+            QuietMode = (param >> 1) & 0x1;
+            MyGroup = (param >> 2) & 0x2F;
+            
+            Lifetime = timeToLive();
+            llListen(ChatChannel, "", "", "");
+            llSetTimerEvent(TICKER_TIME);
+            llRegionSay(ChatChannel, "ping");
         }else{
             llSetTimerEvent(0.0);
         }
     }
 
     listen(integer channel, string name, key id, string message){
-        list msg = llParseString2List(message, ["|"], []);
-        string cmd = llList2String(msg,0);
-        list params1 = llParseString2List(cmd, ["="],[]);
-        if ((llList2String(params1,0) == llGetObjectName()) && (llList2String(params1,1) == "die") && (explicitFlag == 1)){
-            llDie();
-        }else if (cmd == "die" && explicitFlag == 0){
-            llDie();
-        }
-        if (llGetOwnerKey(id) == llGetOwner()){
-            if (cmd == "posdump"){
-                string out = (string)pos + "|" + (string)rot;
-                if (explicitFlag == 1){ out = out + "|explicit";}
-                if (parent){
-                    llRegionSayTo(parent, chatchannel, out);
-                }else{
-                    llRegionSay(chatchannel, out);
+        if(llGetOwnerKey(id) == llGetOwner()) {
+            //check if the message is in JSON format (JSON Format should be used always)
+            if(llJsonValueType(message, [])==JSON_ARRAY) {
+                list commandLines=llJson2List(message);
+                while(llGetListLength(commandLines)) {
+                    list commandParts=llJson2List(llList2String(commandLines, 0));
+                    execute(commandParts, id);
+                    commandLines=llDeleteSubList(commandLines, 0, 0);
                 }
             }
-            else if (cmd == "pong"){
-                if (sFilter1 == 0){
-                    parent = id;
-                    vDelta = (vector)llList2String(msg, 1);
-                    sFilter1 = 1;
-                }
-                if (parent == NULL_KEY){
-                    parent = id;
-                }
-            }else if (cmd == "LINKMSG"){
-                llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
-            }else if (cmd == "LINKMSGQUE"){
-                if (message != sFilter){
-                    //filter out duplicates
-                    llMessageLinked(LINK_SET,(integer)llList2String(msg,1),llList2String(msg,2),(key)llList2String(msg,3));
-                    sFilter = message;
-                }
-            }else if (cmd == "MOVEPROP" ){
-                if (llList2String(msg,1) == llGetObjectName() && (llVecMag(vDelta) < 0.1)){
-                    if (iMoved == 0){
-                        // move it
-                        vector vPosition =  (vector)llList2String(msg,2);
-                        llSetRegionPos( vPosition );
-                        pos = llGetPos();
-                        rot = llGetRot();
-                    }
-                    iMoved = 1;
-                }
+            else {
+                //this is the old message format, don't use it anymore
+                list msg = llParseString2List(message, ["|"], []);
+                execute(msg, id);
             }
         }
     }
 
     timer(){
-        timeoutticker = timeoutticker+10;
-        if (parent != NULL_KEY){
-            if (dietimeout !=0){
-                if (llKey2Name(parent) == "" || timeoutticker >= dietimeout){
-                    llDie();
-                }
-            }else if (llKey2Name(parent) == ""){
+        if(Parent!=NULL_KEY) {
+            //check if the parent still exists
+            if(llKey2Name(Parent)=="") {
+                //parent doesn't exist any more
                 llDie();
             }
+            //check if we provided a timeout in the prop prim description
+            if(Lifetime>0.0) {
+                Lifetime-=TICKER_TIME;
+                if(Lifetime<=0.0) {
+                    llDie();
+                }
+            }
         }
-        integer chat_out = FALSE;
-        if (llGetPos() != pos){
-            pos = llGetPos();
-            chat_out = TRUE;
-        }
-        if (llGetRot() != rot){
-            rot = llGetRot();
-            chat_out = TRUE;
-        }
-        if(quietMode) { chat_out = FALSE;}
-        if (chat_out){
-            string out = (string)pos + "|" + (string)rot;
-            if (explicitFlag == 1){ out = out + "|explicit";}
-            if (parent){
-                llRegionSayTo(parent, chatchannel, out);
-            }else{
-                llRegionSay(chatchannel, out);
+        
+        if(!QuietMode) {
+            integer doReport;
+            if (llGetPos() != MyPos){
+                MyPos = llGetPos();
+                doReport = TRUE;
+            }
+            if (llGetRot() != MyRot){
+                MyRot = llGetRot();
+                doReport = TRUE;
+            }
+            if (doReport){
+                report();
             }
         }
     }
