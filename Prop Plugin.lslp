@@ -180,7 +180,7 @@ default{
 			
 			ChatChannel = ((param >> 8) & 0x00FFFFFF) + 0x7F000000;
 			QuietMode = (param >> 1) & 0x1;
-			MyGroup = (param >> 2) & 0x2F;
+			MyGroup = (param >> 2) & 0x3F;
 			
 			Lifetime = timeToLive();
 			llListen(ChatChannel, "", "", "");
