@@ -169,6 +169,8 @@ B()
         string loc_rootName = (string)llGetLinkPrimitiveParams(1 < llGetNumberOfPrims(), (list)27);
         vector loc_reportingPos = <((float)0), ((float)0), ((float)0)>;
         rotation loc_reportingRot = <((float)0), ((float)0), ((float)0), ((float)1)>;
+        edefaultstate_entry = llGetRootPosition();
+        gF = llGetRootRotation();
         loc_reportingPos = (edefaultstate_entry - loc_parentPos) / loc_parentRot;
         loc_reportingRot = gF / loc_parentRot;
         if (edefaultattach)
@@ -980,8 +982,6 @@ default
             {
                 if (!(edefaultstate_entry == llGetRootPosition() & gF == llGetRootRotation()))
                 {
-                    edefaultstate_entry = llGetRootPosition();
-                    gF = llGetRootRotation();
                     B();
                 }
             }
@@ -1023,3 +1023,4 @@ default
         }
     }
 }
+
